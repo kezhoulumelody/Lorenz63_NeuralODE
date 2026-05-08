@@ -29,18 +29,37 @@ Potential project goals include:
 
 ## Getting Started
 
-Create and activate a virtual environment:
+### Quick Start
+
+Clone this repository:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+git clone https://github.com/kezhoulumelody/Lorenz63_NeuralODE.git
+cd Lorenz63_NeuralODE
 ```
 
-Install dependencies:
+Use the existing conda environment:
+
+```bash
+conda activate /data/kezhoulumelody/melody_NXRO
+```
+
+Install the core dependencies:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Install this project in editable mode:
+
+```bash
 pip install -e .
+```
+
+To deactivate the environment when finished:
+
+```bash
+conda deactivate
 ```
 
 ## Usage
