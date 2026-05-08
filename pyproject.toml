@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lorenz63-neuralode"
+version = "0.1.0"
+description = "Neural ODE experiments for the Lorenz63 dynamical system."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "kezhoulumelody" }
+]
+dependencies = [
+  "matplotlib",
+  "numpy",
+  "scipy",
+  "torch"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
