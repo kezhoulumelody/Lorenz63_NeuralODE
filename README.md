@@ -62,19 +62,15 @@ $$
 
 ```text
 
-src/lorenz63_neuralode/                  # Core NXRO model code
+src/lorenz63_neuralode/      
   models.py            #   Model architectures (Linear, MLP, Attentive, GNN, Transformer)
   train.py             #   Training loops with val split support
   eval.py              #   Evaluation metrics
   data.py              #   Generating training dataset of Lorenz63 model. User could modify the length of the simulations, parameters, etc.,
   stochastic.py        #   Stochastic noise fitting and ensemble forecasting
 
-XRO/                   # Physics-based XRO baseline
-  core.py              #   XRO model (closed-form regression)
-
-src/                   # Additional baselines
-  baseline_models/     #   ARIMA, GP, Neural ODE, Graph ODE, etc.
-  cgode/, lgode/, pgode/  # Coupled/Latent/Partial Graph ODE baselines
+examples/                   #   Jupyter notebook for running examples, diagnosing and plotting results
+  plot_lorenz63_trajectory.ipynb     #   Visualize the training dataset.
 
 data/                  # Training data
   lorenz63_trajectory_10-28-2.7.npz #   Example training dataset generated with  (10 climate indices, 1979-2024)
