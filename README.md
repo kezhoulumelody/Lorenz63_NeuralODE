@@ -62,29 +62,6 @@ To deactivate the environment when finished:
 conda deactivate
 ```
 
-## Usage
-
-Example entry points and notebooks can be added under `examples/`.
-
-Suggested workflow:
-
-1. Add Lorenz63 simulation utilities under `src/lorenz63_neuralode/`.
-2. Add model training code under `src/lorenz63_neuralode/`.
-3. Add runnable scripts or notebooks under `examples/`.
-4. Add tests under `tests/`.
-
-## Development
-
-Install development dependencies once they are added to `pyproject.toml` or a dedicated development requirements file.
-
-Run tests:
-
-```bash
-pytest
-```
-
-Format and lint commands can be added here when the project selects tools such as `ruff`, `black`, or `mypy`.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for basic contribution guidelines.
