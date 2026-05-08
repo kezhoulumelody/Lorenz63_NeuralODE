@@ -29,7 +29,7 @@ Potential project goals include:
 
 ## Getting Started
 
-### Quick Start
+### Preparing CONDA environments
 
 Clone this repository:
 
@@ -60,6 +60,18 @@ To deactivate the environment when finished:
 
 ```bash
 conda deactivate
+```
+
+### Generating training dataset 
+
+```bash
+cd Lorenz63_NeuralODE/src/lorenz63_neuralode/ 
+python data.py \
+--output "Lorenz63_NeuralODE/data/lorenz63_trajectory_10-28-2.7.npz" \
+--t-start 0 --t-end 1000 --dt 0.01 \
+--sigma 10 \
+--rho 28 \
+--beta 2.7
 ```
 
 ## Contributing
