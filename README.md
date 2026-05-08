@@ -2,6 +2,14 @@
 
 Neural ordinary differential equation experiments for learning, simulating, and analyzing the Lorenz63 dynamical system.
 
+
+Potential project goals include:
+
+- Generate Lorenz63 trajectories from known parameters.
+- Train Neural ODE models to approximate Lorenz63 dynamics.
+- Compare learned trajectories against numerical solvers.
+- Visualize attractors, prediction error, and long-horizon behavior.
+
 ## Overview
 
 The Lorenz63 system is a classic chaotic dynamical system defined by three coupled ordinary differential equations. This repository is intended to provide a clean workspace for experiments that combine the Lorenz63 model with Neural ODE methods. 
@@ -27,7 +35,7 @@ $$
 \mathbf{x} = [x, y, z]^T
 $$
 
-and the true linear part is approximately:
+and the linear part is:
 
 $$
 A =
@@ -38,7 +46,7 @@ A =
 \end{bmatrix}
 $$
 
-The nonlinear residual contains:
+The nonlinear residual contains the following, which will be learned by Neural ODE models:
 
 $$
 G(\mathbf{x}) =
@@ -49,12 +57,6 @@ xy
 \end{bmatrix}
 $$
 
-Potential project goals include:
-
-- Generate Lorenz63 trajectories from known parameters.
-- Train Neural ODE models to approximate Lorenz63 dynamics.
-- Compare learned trajectories against numerical solvers.
-- Visualize attractors, prediction error, and long-horizon behavior.
 
 ## Repository Structure
 
@@ -111,11 +113,22 @@ conda deactivate
 cd Lorenz63_NeuralODE/src/lorenz63_neuralode/ 
 python data.py \
 --output "Lorenz63_NeuralODE/data/lorenz63_trajectory_10-28-2.7.npz" \
---t-start 0 --t-end 1000 --dt 0.01 \
+--t-start 0 \
+--t-end 1000 \
+--dt 0.01 \
 --sigma 10 \
 --rho 28 \
 --beta 2.7
 ```
+Important flags:
+
+- `--output`: output file is saved as a NumPy compressed data archive (".npz") format.
+- `--t-start`: starting time.
+- `--t-end`: end time.
+- `--dt`: time interval.
+- `--sigma`: parameter $\sigma$.
+- `--rho`: parameter $\rho$.
+- `--beta`, `parameter $\beta$.
 
 ## Contributing
 
