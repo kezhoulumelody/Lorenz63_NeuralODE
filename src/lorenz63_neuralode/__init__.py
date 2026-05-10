@@ -3,11 +3,13 @@
 from .data import Lorenz63ResidualDataset, generate_lorenz63, get_dataloaders, lorenz63
 from .models import (
     Lorenz63AttentionResidualModel,
+    Lorenz63BilinearGraphResidualModel,
     Lorenz63BilinearResidualModel,
     Lorenz63GraphResidualModel,
     Lorenz63LinearModel,
     Lorenz63PolynomialResidualModel,
     Lorenz63PureMLPModel,
+    Lorenz63PureTransformerModel,
     Lorenz63ResidualModel,
     Lorenz63ResidualMixModel,
     Lorenz63TransformerResidualModel,
@@ -22,11 +24,13 @@ __version__ = "0.1.0"
 __all__ = [
     "Lorenz63ResidualDataset",
     "Lorenz63AttentionResidualModel",
+    "Lorenz63BilinearGraphResidualModel",
     "Lorenz63BilinearResidualModel",
     "Lorenz63GraphResidualModel",
     "Lorenz63LinearModel",
     "Lorenz63PolynomialResidualModel",
     "Lorenz63PureMLPModel",
+    "Lorenz63PureTransformerModel",
     "Lorenz63ResidualModel",
     "Lorenz63ResidualMixModel",
     "Lorenz63TransformerResidualModel",

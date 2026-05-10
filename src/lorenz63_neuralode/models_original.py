@@ -288,45 +288,6 @@ class Lorenz63PureMLPModel(nn.Module):
         return self.drift(x)
 
 
-class Lorenz63PureTransformerModel(nn.Module):
-    """Pure neural ODE baseline: a transformer learns the full tendency directly.
-
-    Unlike ``Lorenz63TransformerResidualModel``, this model does not use the
-    structured Lorenz63 linear operator or a residual mask. It predicts the
-    complete tendency ``[dx/dt, dy/dt, dz/dt]`` from variable tokens.
-    """
-
-    def __init__(
-        self,
-        d_model: int = 64,
-        n_heads: int = 4,
-        n_layers: int = 2,
-        dropout: float = 0.0,
-    ) -> None:
-        super().__init__()
-        self.input_proj = nn.Linear(1, d_model)
-        self.var_embedding = nn.Parameter(torch.randn(3, d_model) * 0.02)
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=d_model,
-            nhead=n_heads,
-            dim_feedforward=2 * d_model,
-            dropout=dropout,
-            activation="gelu",
-            batch_first=True,
-        )
-        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
-        self.output_proj = nn.Linear(d_model, 1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.shape[-1] != 3:
-            raise ValueError(f"Expected final state dimension 3, got shape {tuple(x.shape)}")
-        leading_shape = x.shape[:-1]
-        flat_x = x.reshape(-1, 3)
-        tokens = self.input_proj(flat_x.unsqueeze(-1)) + self.var_embedding.unsqueeze(0)
-        encoded = self.encoder(tokens)
-        return self.output_proj(encoded).squeeze(-1).reshape(*leading_shape, 3)
-
-
 class Lorenz63BilinearResidualModel(nn.Module):
     """Structured linear plus low-rank bilinear residual channels."""
 
@@ -367,75 +328,6 @@ class Lorenz63BilinearResidualModel(nn.Module):
         return self.linear(x) + self.residual_tendency(x)
 
 
-class Lorenz63BilinearGraphResidualModel(nn.Module):
-    """Structured linear plus explicit graph-masked bilinear residual.
-
-    The residual has the form
-
-        r_i(x) = sum_{j,k} A_ijk B_ijk x_j x_k,
-
-    where ``A_ijk`` gates which variable-pair products contribute to each
-    output tendency and ``B_ijk`` is learned.
-    """
-
-    def __init__(
-        self,
-        sigma_init: float = 10.0,
-        rho_init: float = 28.0,
-        beta_init: float = 8.0 / 3.0,
-        use_fixed_graph: bool = True,
-        mask_mode: str = "lorenz",
-        residual_mask: tuple[float, float, float] = (0.0, 1.0, 1.0),
-    ) -> None:
-        super().__init__()
-        self.use_fixed_graph = use_fixed_graph
-        self.linear = StructuredLorenz63Linear(
-            sigma_init=sigma_init,
-            rho_init=rho_init,
-            beta_init=beta_init,
-        )
-        self.register_buffer("residual_mask", torch.tensor(residual_mask, dtype=torch.float32))
-
-        if mask_mode == "lorenz":
-            pair_graph = torch.zeros(3, 3, 3, dtype=torch.float32)
-            pair_graph[1, 0, 2] = 1.0  # x*z contributes to dy/dt.
-            pair_graph[2, 0, 1] = 1.0  # x*y contributes to dz/dt.
-        elif mask_mode == "full":
-            pair_graph = torch.ones(3, 3, 3, dtype=torch.float32)
-        else:
-            raise ValueError("mask_mode must be 'lorenz' or 'full'")
-
-        if use_fixed_graph:
-            self.register_buffer("pair_graph", pair_graph)
-        else:
-            self.pair_graph_param = nn.Parameter(pair_graph)
-
-        self.B_pair = nn.Parameter(torch.empty(3, 3, 3))
-        nn.init.xavier_uniform_(self.B_pair)
-
-    @property
-    def A(self) -> torch.Tensor:
-        return self.linear.matrix
-
-    def graph_mask(self) -> torch.Tensor:
-        if self.use_fixed_graph:
-            return self.pair_graph
-        return torch.relu(self.pair_graph_param)
-
-    @property
-    def bilinear_weights(self) -> torch.Tensor:
-        """Return the effective A_ijk B_ijk bilinear residual weights."""
-        return self.graph_mask() * self.B_pair
-
-    def residual_tendency(self, x: torch.Tensor) -> torch.Tensor:
-        pair_products = x.unsqueeze(2) * x.unsqueeze(1)
-        residual = torch.einsum("bjk,ijk->bi", pair_products, self.bilinear_weights)
-        return residual * self.residual_mask
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.linear(x) + self.residual_tendency(x)
-
-
 class Lorenz63AttentionResidualModel(nn.Module):
     """Structured linear plus lightweight variable-token attention residual."""
 
@@ -457,11 +349,9 @@ class Lorenz63AttentionResidualModel(nn.Module):
             beta_init=beta_init,
         )
         self.register_buffer("residual_mask", torch.tensor(residual_mask, dtype=torch.float32))
-        self.W_input = nn.Linear(1, d_model)
-        self.var_embedding = nn.Parameter(torch.randn(3, d_model) * 0.02)
-        self.Wq = nn.Linear(d_model, d_model, bias=False)
-        self.Wk = nn.Linear(d_model, d_model, bias=False)
-        self.Wv = nn.Linear(d_model, d_model, bias=False)
+        self.Wq = nn.Linear(1, d_model, bias=False)
+        self.Wk = nn.Linear(1, d_model, bias=False)
+        self.Wv = nn.Linear(1, d_model, bias=False)
         self.Wo = nn.Linear(d_model, 1, bias=False)
         self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
@@ -482,7 +372,7 @@ class Lorenz63AttentionResidualModel(nn.Module):
         return self.linear.matrix
 
     def residual_tendency(self, x: torch.Tensor) -> torch.Tensor:
-        tokens = self.W_input(x.unsqueeze(-1)) + self.var_embedding.unsqueeze(0)
+        tokens = x.unsqueeze(-1)
         q = self.Wq(tokens)
         k = self.Wk(tokens)
         v = self.Wv(tokens)
@@ -631,19 +521,8 @@ def build_lorenz63_model(
         )
     if model_name in {"pure_mlp", "pure"}:
         return Lorenz63PureMLPModel(hidden_dim=hidden_dim, n_hidden_layers=n_hidden_layers)
-    if model_name in {"pure_transformer", "transformer_pure", "full_transformer"}:
-        return Lorenz63PureTransformerModel(
-            d_model=hidden_dim,
-            n_layers=n_hidden_layers,
-        )
     if model_name in {"bilinear", "bilinear_residual"}:
         return Lorenz63BilinearResidualModel(
-            sigma_init=sigma_init,
-            rho_init=rho_init,
-            beta_init=beta_init,
-        )
-    if model_name in {"bilinear_graph", "bilinear_graph_residual", "graph_bilinear"}:
-        return Lorenz63BilinearGraphResidualModel(
             sigma_init=sigma_init,
             rho_init=rho_init,
             beta_init=beta_init,
@@ -671,5 +550,5 @@ def build_lorenz63_model(
     raise ValueError(
         f"Unknown model_name={model_name!r}. Choose one of: "
         "linear, polynomial, residual_mlp, residual_mix, pure_mlp, "
-        "pure_transformer, bilinear, bilinear_graph, attention, graph, transformer."
+        "bilinear, attention, graph, transformer."
     )
