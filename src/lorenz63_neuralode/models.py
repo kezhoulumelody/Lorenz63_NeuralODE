@@ -34,14 +34,14 @@ def lorenz63_linear_matrix(
 class StructuredLorenz63Linear(nn.Module):
     """Learnable Lorenz63 linear operator with fixed sparsity pattern.
 
-    The learnable matrix is constrained to:
+    The learnable matrix is constrained to the Lorenz63 linear form:
 
-        [[a00, a01, 0],
-         [a10, a11, 0],
-         [0,   0,   a22]]
+        [[-sigma, sigma, 0],
+         [rho,    -1,    0],
+         [0,       0,   -beta]]
 
-    This matches the Lorenz63 linear structure while allowing the nonzero
-    coefficients to be learned from data.
+    ``sigma``, ``rho``, and ``beta`` are learned directly, while the signs and
+    fixed y damping term are built into the matrix.
     """
 
     def __init__(
@@ -51,22 +51,25 @@ class StructuredLorenz63Linear(nn.Module):
         beta_init: float = 8.0 / 3.0,
     ) -> None:
         super().__init__()
-        init_values = torch.tensor(
-            [-sigma_init, sigma_init, rho_init, -1.0, -beta_init],
-            dtype=torch.float32,
-        )
-        self.coefficients = nn.Parameter(init_values) ## These parameters will be learned during training
+        init_values = torch.tensor([sigma_init, rho_init, beta_init], dtype=torch.float32)
+        self.parameters_lorenz = nn.Parameter(init_values)
+
+    @property
+    def physical_parameters(self) -> torch.Tensor:
+        """Return learned parameters [sigma, rho, beta]."""
+        return self.parameters_lorenz
 
     @property
     def matrix(self) -> torch.Tensor:
         """Return the structured learnable matrix A_theta."""
-        a00, a01, a10, a11, a22 = self.coefficients
-        zero = a00.new_tensor(0.0)
+        sigma, rho, beta = self.physical_parameters
+        zero = sigma.new_tensor(0.0)
+        minus_one = sigma.new_tensor(-1.0)
         return torch.stack(
             [
-                torch.stack([a00, a01, zero]),
-                torch.stack([a10, a11, zero]),
-                torch.stack([zero, zero, a22]),
+                torch.stack([-sigma, sigma, zero]),
+                torch.stack([rho, minus_one, zero]),
+                torch.stack([zero, zero, -beta]),
             ]
         )
 
@@ -412,18 +415,18 @@ class Lorenz63GraphResidualModel(nn.Module):
             dtype=torch.float32,
         )
         if use_fixed_graph:
-            self.register_buffer("A_graph", lorenz_adj)
+            self.register_buffer("A_graph", lorenz_adj) # meaning that adjancency matris is set as lorenz_adj and keeps it fixed
         else:
-            self.A_graph_param = nn.Parameter(lorenz_adj)
+            self.A_graph_param = nn.Parameter(lorenz_adj) # initial lorenz_adj but learnable during training
         self.W_g = nn.Parameter(torch.empty(3, 3))
-        nn.init.xavier_uniform_(self.W_g)
+        nn.init.xavier_uniform_(self.W_g) # Initialize the weights of the graph message function with Xavier uniform initialization, which is a common choice for linear layers.
 
     @property
     def A(self) -> torch.Tensor:
         return self.linear.matrix
 
     def normalized_graph(self) -> torch.Tensor:
-        graph = self.A_graph if self.use_fixed_graph else torch.relu(self.A_graph_param)
+        graph = self.A_graph if self.use_fixed_graph else torch.relu(self.A_graph_param) # relu forceses the graph weights to be non-negative, which can help with stability and interpretability in a graph-based model. It ensures that the learned graph structure does not have negative edge weights, which might not make sense in many contexts. By applying ReLU, we can encourage the model to learn a sparse and interpretable graph structure where edges represent positive relationships between variables. If the original A_graph_param has negative values, they will be set to zero, effectively removing those edges from the graph. This can lead to a more stable training process and a more meaningful learned graph structure. If use_fixed_graph is True, then A_graph is already non-negative (since it's initialized as lorenz_adj), so we can skip the ReLU in that case.
         rowsum = graph.sum(dim=1, keepdim=True).clamp_min(1e-6)
         return graph / rowsum
 

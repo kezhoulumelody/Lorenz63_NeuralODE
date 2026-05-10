@@ -25,6 +25,23 @@ def compute_tendency_rmse(model, dataloader, device: str = "cpu") -> float:
     return float((total_mse / max(n_samples, 1)) ** 0.5)
 
 
+@torch.no_grad()
+def compute_tendency_component_rmse(model, dataloader, device: str = "cpu") -> torch.Tensor:
+    """Compute per-component RMSE for dx/dt, dy/dt, and dz/dt."""
+    model.eval()
+    total_sse = torch.zeros(3, device=device)
+    n_samples = 0
+
+    for batch in dataloader:
+        state = batch["state"].to(device)
+        target_dxdt = batch["dxdt"].to(device)
+        pred_dxdt = model(state)
+        total_sse += torch.sum((pred_dxdt - target_dxdt) ** 2, dim=0)
+        n_samples += state.shape[0]
+
+    return torch.sqrt(total_sse / max(n_samples, 1)).detach().cpu()
+
+
 compute_residual_rmse = compute_tendency_rmse
 
 

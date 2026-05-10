@@ -10,8 +10,67 @@ import torch.nn as nn
 from torch.optim import AdamW
 
 from .data import get_dataloaders
-from .eval import compute_tendency_rmse
+from .eval import compute_tendency_component_rmse, compute_tendency_rmse
 from .models import build_lorenz63_model
+
+
+def save_learning_curve(history: dict[str, list[float]], output_path: str | Path) -> None:
+    """Save overall and per-component train/test RMSE curves."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    epochs = range(1, len(history["train_rmse"]) + 1)
+    component_names = ("dx/dt", "dy/dt", "dz/dt")
+    colors = ("tab:blue", "tab:orange", "tab:green")
+
+    fig, axes = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
+
+    axes[0].plot(epochs, history["train_rmse"], label="train", color="black", linewidth=1.8)
+    axes[0].plot(
+        epochs,
+        history["test_rmse"],
+        label="test",
+        color="tab:red",
+        linewidth=1.8,
+        linestyle="--",
+    )
+    axes[0].set_ylabel("Overall RMSE")
+    axes[0].set_title("Lorenz63 tendency learning curve")
+    axes[0].legend()
+    axes[0].grid(alpha=0.3)
+
+    train_components = torch.tensor(history["train_component_rmse"])
+    test_components = torch.tensor(history["test_component_rmse"])
+    for idx, (name, color) in enumerate(zip(component_names, colors, strict=True)):
+        axes[1].plot(
+            epochs,
+            train_components[:, idx],
+            label=f"train {name}",
+            color=color,
+            linewidth=1.6,
+        )
+        axes[1].plot(
+            epochs,
+            test_components[:, idx],
+            label=f"test {name}",
+            color=color,
+            linewidth=1.6,
+            linestyle="--",
+        )
+
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Component RMSE")
+    axes[1].legend(ncol=2)
+    axes[1].grid(alpha=0.3)
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=200)
+    plt.close(fig)
 
 
 def train_lorenz63_residual(
@@ -28,6 +87,7 @@ def train_lorenz63_residual(
     lr: float = 1e-3,
     weight_decay: float = 1e-5,
     device: str = "cpu",
+    curve_output_path: str | Path | None = None,
 ) -> tuple[torch.nn.Module, dict[str, list[float]]]:
     """Train A_theta and G_theta(x) to match Lorenz63 derivatives."""
     train_loader, test_loader = get_dataloaders(
@@ -46,11 +106,17 @@ def train_lorenz63_residual(
 
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn = nn.MSELoss()
-    history = {"train_rmse": [], "test_rmse": []}
+    history = {
+        "train_rmse": [],
+        "test_rmse": [],
+        "train_component_rmse": [],
+        "test_component_rmse": [],
+    }
 
     for epoch in range(1, n_epochs + 1):
         model.train()
         total_loss = 0.0
+        total_component_sse = torch.zeros(3, device=device)
         n_samples = 0
 
         for batch in train_loader:
@@ -65,18 +131,27 @@ def train_lorenz63_residual(
             optimizer.step()
 
             batch_size_actual = state.shape[0]
+            total_component_sse += torch.sum((pred_dxdt.detach() - target_dxdt) ** 2, dim=0)
             total_loss += loss.item() * batch_size_actual
             n_samples += batch_size_actual
 
         train_rmse = (total_loss / max(n_samples, 1)) ** 0.5
+        train_component_rmse = torch.sqrt(total_component_sse / max(n_samples, 1)).detach().cpu()
         test_rmse = compute_tendency_rmse(model, test_loader, device=device)
+        test_component_rmse = compute_tendency_component_rmse(model, test_loader, device=device)
         history["train_rmse"].append(float(train_rmse))
         history["test_rmse"].append(float(test_rmse))
+        history["train_component_rmse"].append([float(value) for value in train_component_rmse])
+        history["test_component_rmse"].append([float(value) for value in test_component_rmse])
 
         print(
             f"Epoch {epoch:04d} | "
             f"train tendency RMSE: {train_rmse:.6f} | "
-            f"test tendency RMSE: {test_rmse:.6f}"
+            f"test tendency RMSE: {test_rmse:.6f} | "
+            f"train xyz: {train_component_rmse[0]:.6f}, "
+            f"{train_component_rmse[1]:.6f}, {train_component_rmse[2]:.6f} | "
+            f"test xyz: {test_component_rmse[0]:.6f}, "
+            f"{test_component_rmse[1]:.6f}, {test_component_rmse[2]:.6f}"
         )
 
     output_path = Path(output_path)
@@ -98,6 +173,11 @@ def train_lorenz63_residual(
         output_path,
     )
     print(f"Saved model checkpoint to {output_path}")
+
+    if curve_output_path is None:
+        curve_output_path = output_path.with_name(f"{output_path.stem}_learning_curve.png")
+    save_learning_curve(history, curve_output_path)
+    print(f"Saved learning curve to {curve_output_path}")
 
     return model, history
 
@@ -131,6 +211,11 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--weight-decay", type=float, default=1e-5)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--curve-output",
+        default=None,
+        help="Path for the learning curve PNG. Defaults to output stem plus '_learning_curve.png'.",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +235,7 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
         device=args.device,
+        curve_output_path=args.curve_output,
     )
 
 

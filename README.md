@@ -67,7 +67,6 @@ src/lorenz63_neuralode/
   train.py             #   Training loops with val split support
   eval.py              #   Evaluation metrics
   data.py              #   Generating training dataset of Lorenz63 model. User could modify the length of the simulations, parameters, etc.,
-  stochastic.py        #   Stochastic noise fitting and ensemble forecasting
 
 examples/                   #   Jupyter notebook for running examples, diagnosing and plotting results
   plot_lorenz63_trajectory.ipynb     #   Visualize the training dataset.
@@ -136,6 +135,59 @@ Important flags:
 - `--sigma`: parameter $\sigma$.
 - `--rho`: parameter $\rho$.
 - `--beta`, `parameter $\beta$.
+
+### Training
+
+Use the sample notebook:
+
+```text
+examples/train_lorenz63_model.ipynb
+```
+
+This notebook trains a selected Lorenz63 Neural ODE model and saves both the checkpoint and learning-curve figures. In the configuration cell, choose:
+
+```python
+MODEL_NAME = "polynomial"      # or "residual_mlp", "graph", "attention", "transformer"
+DATA_PATH = repo_root / "data" / "lorenz63_trajectory_10-28-2.7.npz"
+N_EPOCHS = 500
+DEVICE = "cuda"                # use "cpu" if GPU is unavailable
+```
+
+Then run the notebook from top to bottom. The checkpoint is saved under `outputs/`, for example:
+
+```text
+outputs/lorenz63_polynomial/lorenz63_polynomial_cookbook.pt
+```
+
+The notebook also plots in-sample and out-of-sample RMSE and ACC curves during training.
+
+### Evaluation
+
+Use the sample notebook:
+
+```text
+examples/predict_lorenz63_pretrained_cookbook.ipynb
+```
+
+This notebook loads a pretrained checkpoint, runs trajectory prediction from a configurable initial condition, and compares the learned model against the reference Lorenz63 trajectory. In the configuration cell, set:
+
+```python
+DATA_PATH = repo_root / "data" / "lorenz63_trajectory_10-28-2.7.npz"
+CHECKPOINT_PATH = repo_root / "outputs" / "lorenz63_polynomial" / "lorenz63_polynomial_cookbook.pt"
+INITIAL_INDEX = 1000
+ROLLOUT_STEPS = 4000
+DEVICE = "cuda"
+```
+
+The notebook produces:
+
+- true vs learned 3D trajectories,
+- true vs learned `x`, `y`, and `z` time series,
+- trajectory RMSE,
+- learned linear matrix comparison,
+- learned nonlinear residual comparison.
+
+If `models.py` has changed since the checkpoint was trained, restart the Jupyter kernel and retrain the model before evaluation.
 
 ## Contributing
 
