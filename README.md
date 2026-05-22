@@ -63,13 +63,18 @@ $$
 ```text
 
 src/lorenz63_neuralode/      
-  models.py            #   Model architectures (Linear, MLP, Attentive, GNN, Transformer)
+  models.py            #   Unstructured-linear residual models (MLP, attention, graph, transformer)
+  models_structuredLinear.py #   Structured-linear model variants and baselines
   train.py             #   Training loops with val split support
   eval.py              #   Evaluation metrics
   data.py              #   Generating training dataset of Lorenz63 model. User could modify the length of the simulations, parameters, etc.,
 
 examples/                   #   Jupyter notebook for running examples, diagnosing and plotting results
   plot_lorenz63_trajectory.ipynb     #   Visualize the training dataset.
+  train_lorenz63_neural_residual.ipynb #   Train the unstructured-linear MLP residual model.
+  predict_lorenz63_neural_residual_cookbook.ipynb #   Evaluate a pretrained unstructured-linear MLP residual model.
+  train_lorenz63_stucturedLinear_model.ipynb #   Train structured-linear model variants.
+  predict_lorenz63_pretrained_structuredLinear_cookbook.ipynb #   Evaluate structured-linear checkpoints.
 
 data/                  # Training data
   lorenz63_trajectory_10-28-2.7.npz #   Example training dataset generated with  (10 climate indices, 1979-2024)
@@ -138,42 +143,55 @@ Important flags:
 
 ### Training
 
-Use the sample notebook:
+Use the unstructured-linear MLP residual training notebook:
 
 ```text
-examples/train_lorenz63_model.ipynb
+examples/train_lorenz63_neural_residual.ipynb
 ```
 
-This notebook trains a selected Lorenz63 Neural ODE model and saves both the checkpoint and learning-curve figures. In the configuration cell, choose:
+This notebook trains the current `models.py` MLP residual Neural ODE model:
+
+$$
+f_\theta(x) = A_\theta x + G_\theta(x)
+$$
+
+where `A_theta` is a full unconstrained `3 x 3` learnable matrix and the residual mask defaults to `(1, 1, 1)`, so the residual is not given the Lorenz63 nonlinear sparsity constraint. In the configuration cell, set:
 
 ```python
-MODEL_NAME = "polynomial"      # or "residual_mlp", "graph", "attention", "transformer"
+MODEL_NAME = "residual_mlp"
 DATA_PATH = repo_root / "data" / "lorenz63_trajectory_10-28-2.7.npz"
-N_EPOCHS = 500
+OUTPUT_DIR = repo_root / "outputs" / "unstructured" / f"lorenz63_{MODEL_NAME}"
+N_EPOCHS = 200
 DEVICE = "cuda"                # use "cpu" if GPU is unavailable
 ```
 
 Then run the notebook from top to bottom. The checkpoint is saved under `outputs/`, for example:
 
 ```text
-outputs/lorenz63_polynomial/lorenz63_polynomial_cookbook.pt
+outputs/unstructured/lorenz63_residual_mlp/lorenz63_residual_mlp_10-28-2.7_1-1-2.pt
 ```
 
 The notebook also plots in-sample and out-of-sample RMSE and ACC curves during training.
 
-### Evaluation
-
-Use the sample notebook:
+For the structured-linear model family, use:
 
 ```text
-examples/predict_lorenz63_pretrained_cookbook.ipynb
+examples/train_lorenz63_stucturedLinear_model.ipynb
 ```
 
-This notebook loads a pretrained checkpoint, runs trajectory prediction from a configurable initial condition, and compares the learned model against the reference Lorenz63 trajectory. In the configuration cell, set:
+### Evaluation
+
+Use the unstructured-linear MLP residual prediction notebook:
+
+```text
+examples/predict_lorenz63_neural_residual_cookbook.ipynb
+```
+
+This notebook loads a pretrained unstructured-linear MLP residual checkpoint, runs trajectory prediction from a configurable initial condition, and compares the learned model against the reference Lorenz63 trajectory. In the configuration cell, set:
 
 ```python
 DATA_PATH = repo_root / "data" / "lorenz63_trajectory_10-28-2.7.npz"
-CHECKPOINT_PATH = repo_root / "outputs" / "lorenz63_polynomial" / "lorenz63_polynomial_cookbook.pt"
+CHECKPOINT_PATH = repo_root / "outputs" / "unstructured" / "lorenz63_residual_mlp" / "lorenz63_residual_mlp_10-28-2.7_1-1-2.pt"
 INITIAL_INDEX = 1000
 ROLLOUT_STEPS = 4000
 DEVICE = "cuda"
@@ -184,8 +202,15 @@ The notebook produces:
 - true vs learned 3D trajectories,
 - true vs learned `x`, `y`, and `z` time series,
 - trajectory RMSE,
-- learned linear matrix comparison,
-- learned nonlinear residual comparison.
+- learned unconstrained linear matrix comparison,
+- learned residual comparison against the actual Lorenz63 residual,
+- parity plots and summary statistics for states and tendencies.
+
+The notebook checks that the checkpoint contains the current unstructured-linear key `linear.matrix_param`. If you want to evaluate a structured-linear checkpoint, use:
+
+```text
+examples/predict_lorenz63_pretrained_structuredLinear_cookbook.ipynb
+```
 
 If `models.py` has changed since the checkpoint was trained, restart the Jupyter kernel and retrain the model before evaluation.
 

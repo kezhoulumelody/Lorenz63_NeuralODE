@@ -1,4 +1,4 @@
-"""Training utilities for Lorenz63 structured Neural ODE learning."""
+"""Training utilities for Lorenz63 unstructured-linear residual learning."""
 
 from __future__ import annotations
 
@@ -183,24 +183,31 @@ def train_lorenz63_residual(
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train Lorenz63 structured Neural ODE model.")
+    parser = argparse.ArgumentParser(description="Train Lorenz63 unstructured-linear residual model.")
     parser.add_argument("--data", default="data/lorenz63_trajectory_10-28-2.7.npz")
     parser.add_argument("--output", default="outputs/lorenz63_residual_model.pt")
     parser.add_argument(
         "--model",
         default="residual_mlp",
         choices=[
-            "linear",
-            "polynomial",
             "residual_mlp",
-            "residual_mix",
-            "pure_mlp",
-            "pure_transformer",
-            "bilinear",
-            "bilinear_graph",
+            "mlp_residual",
+            "neural_ode_residual",
+            "unstructured_residual_mlp",
+            "unstructured_mlp",
+            "free_linear_mlp",
             "attention",
+            "attentive",
+            "unstructured_attention",
+            "free_linear_attention",
             "graph",
+            "graph_residual",
+            "unstructured_graph",
+            "free_linear_graph",
             "transformer",
+            "transformer_residual",
+            "unstructured_transformer",
+            "free_linear_transformer",
         ],
     )
     parser.add_argument("--sigma-init", type=float, default=10.0)
