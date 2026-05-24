@@ -6,6 +6,7 @@ import argparse
 from pathlib import Path
 
 import torch
+import torch.nn as nn
 from torch.optim import AdamW
 
 from .data import get_dataloaders
@@ -72,30 +73,6 @@ def save_learning_curve(history: dict[str, list[float]], output_path: str | Path
     plt.close(fig)
 
 
-def compute_tendency_component_scale(
-    train_loader: torch.utils.data.DataLoader,
-    device: str,
-    eps: float = 1e-8,
-) -> torch.Tensor:
-    """Compute per-component target tendency scales from the training split."""
-    total = torch.zeros(3, device=device)
-    total_sq = torch.zeros(3, device=device)
-    n_samples = 0
-
-    for batch in train_loader:
-        target_dxdt = batch["dxdt"].to(device)
-        total += torch.sum(target_dxdt, dim=0)
-        total_sq += torch.sum(target_dxdt**2, dim=0)
-        n_samples += target_dxdt.shape[0]
-
-    if n_samples == 0:
-        raise ValueError("Cannot compute tendency component scales from an empty train loader.")
-
-    mean = total / n_samples
-    variance = torch.clamp(total_sq / n_samples - mean**2, min=eps**2)
-    return torch.sqrt(variance)
-
-
 def train_lorenz63_residual(
     npz_path: str | Path = "data/lorenz63_trajectory_10-28-2.7.npz",
     output_path: str | Path = "outputs/lorenz63_residual_model.pt",
@@ -128,24 +105,17 @@ def train_lorenz63_residual(
     ).to(device)
 
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    component_scale = compute_tendency_component_scale(train_loader, device=device)
+    loss_fn = nn.MSELoss()
     history = {
         "train_rmse": [],
         "test_rmse": [],
         "train_component_rmse": [],
         "test_component_rmse": [],
-        "train_normalized_rmse": [],
     }
-
-    print(
-        "Training with normalized tendency MSE using component scales: "
-        f"{component_scale[0]:.6f}, {component_scale[1]:.6f}, {component_scale[2]:.6f}"
-    )
 
     for epoch in range(1, n_epochs + 1):
         model.train()
-        total_sse = 0.0
-        total_normalized_loss = 0.0
+        total_loss = 0.0
         total_component_sse = torch.zeros(3, device=device)
         n_samples = 0
 
@@ -154,22 +124,18 @@ def train_lorenz63_residual(
             target_dxdt = batch["dxdt"].to(device)
 
             pred_dxdt = model(state)
-            normalized_error = (pred_dxdt - target_dxdt) / component_scale
-            loss = torch.mean(normalized_error**2)
+            loss = loss_fn(pred_dxdt, target_dxdt)
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
             batch_size_actual = state.shape[0]
-            squared_error = (pred_dxdt.detach() - target_dxdt) ** 2
-            total_component_sse += torch.sum(squared_error, dim=0)
-            total_sse += torch.sum(squared_error).item()
-            total_normalized_loss += loss.item() * batch_size_actual
+            total_component_sse += torch.sum((pred_dxdt.detach() - target_dxdt) ** 2, dim=0)
+            total_loss += loss.item() * batch_size_actual
             n_samples += batch_size_actual
 
-        train_rmse = (total_sse / max(n_samples * 3, 1)) ** 0.5
-        train_normalized_rmse = (total_normalized_loss / max(n_samples, 1)) ** 0.5
+        train_rmse = (total_loss / max(n_samples, 1)) ** 0.5
         train_component_rmse = torch.sqrt(total_component_sse / max(n_samples, 1)).detach().cpu()
         test_rmse = compute_tendency_rmse(model, test_loader, device=device)
         test_component_rmse = compute_tendency_component_rmse(model, test_loader, device=device)
@@ -177,13 +143,11 @@ def train_lorenz63_residual(
         history["test_rmse"].append(float(test_rmse))
         history["train_component_rmse"].append([float(value) for value in train_component_rmse])
         history["test_component_rmse"].append([float(value) for value in test_component_rmse])
-        history["train_normalized_rmse"].append(float(train_normalized_rmse))
 
         print(
             f"Epoch {epoch:04d} | "
             f"train tendency RMSE: {train_rmse:.6f} | "
             f"test tendency RMSE: {test_rmse:.6f} | "
-            f"train normalized RMSE: {train_normalized_rmse:.6f} | "
             f"train xyz: {train_component_rmse[0]:.6f}, "
             f"{train_component_rmse[1]:.6f}, {train_component_rmse[2]:.6f} | "
             f"test xyz: {test_component_rmse[0]:.6f}, "
@@ -202,7 +166,6 @@ def train_lorenz63_residual(
                 "rho_init": rho_init,
                 "beta_init": beta_init,
                 "learned_A": model.A.detach().cpu() if hasattr(model, "A") else None,
-                "tendency_component_scale": component_scale.detach().cpu(),
                 "hidden_dim": hidden_dim,
                 "n_hidden_layers": n_hidden_layers,
             },
