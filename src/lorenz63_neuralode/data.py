@@ -8,15 +8,17 @@ from pathlib import Path
 import numpy as np
 import torch
 from scipy.integrate import solve_ivp
+from scipy.integrate._ivp.rk import DOP853 # new import
 from torch.utils.data import DataLoader, Dataset, random_split
 
-def lorenz63(t, state, sigma=10.0, rho=28.0, beta=8.0 / 3.0):
-    """Lorenz63 system."""
+def lorenz63(t, state, sigma=10.0, rho=28.0, beta=8.0 / 3.0, forcing=(0.0, 0.0, 0.0)): # we add Wiener process using the Euler-Maruyama scheme in the generate_lorenz63 function
+    """Lorenz63 system. New kwargs for forcing with default at 0."""
     x, y, z = state
+    Fx, Fy, Fz = forcing
 
-    dxdt = sigma * (y - x)
-    dydt = x * (rho - z) - y
-    dzdt = x * y - beta * z
+    dxdt = sigma * (y - x) + Fx
+    dydt = x * (rho - z) - y + Fy
+    dzdt = x * y - beta * z + Fz
 
     return [dxdt, dydt, dzdt]
 
@@ -29,29 +31,70 @@ def generate_lorenz63(
     sigma=10.0,
     rho=28.0,
     beta=8.0 / 3.0,
+    forcing=(0.0, 0.0, 0.0),
+    noise=(0.0, 0.0, 0.0),
+    noise_seed=None
 ):
     """Solve Lorenz63 and return t, x, y, z, states, and parameter metadata."""
     if y0 is None:
         y0 = [1.0, 1.0, 1.0]
 
     t_eval = np.arange(t_start, t_end, dt)
+    fun = lambda t, state: lorenz63(t, state, sigma=sigma, rho=rho, beta=beta, forcing=forcing)
 
-    sol = solve_ivp(
-        fun=lambda t, state: lorenz63(t, state, sigma=sigma, rho=rho, beta=beta),
-        t_span=(t_start, t_end),
-        y0=y0,
-        t_eval=t_eval,
-        method="DOP853",
-    )
+    if noise == (0.0, 0.0, 0.0): # with no noise, it solves using standard RK8
+        sol = solve_ivp(
+            fun=fun,
+            t_span=(t_start, t_end),
+            y0=y0,
+            t_eval=t_eval,
+            method="DOP853",
+        )
 
-    if not sol.success:
-        raise RuntimeError(f"Lorenz63 solve_ivp failed: {sol.message}")
+        x, y, z = sol.y
+        states = sol.y.T
+        t = sol.t
 
-    x, y, z = sol.y
-    states = sol.y.T
+        if not sol.success:
+            raise RuntimeError(f"Lorenz63 solve_ivp failed: {sol.message}")
+
+
+    else: # with noise, it solves with RK8 + Euler-Maruyama scheme 
+        rng = np.random.default_rng(noise_seed)
+        sqrt_dt = np.sqrt(dt)
+        noise_arr = np.array(noise)
+        
+        # Pre-allocate array for states
+        sim_states = np.zeros((len(t_eval), 3))
+        sim_states[0] = y0
+        y_curr = np.array(y0, dtype=float)
+        
+        for i in range(1, len(t_eval)):
+            t_curr = t_eval[i-1]
+            t_next = t_eval[i]
+            
+            # DOP853 deterministic step
+            solver = DOP853(fun, t_curr, y_curr, t_next)
+            while solver.status == "running":
+                solver.step()
+            y_det = solver.y
+            
+            # Euler-Maruyama stochastic step
+            dW = rng.standard_normal(3) * sqrt_dt
+            y_curr = y_det + noise_arr * dW
+
+            #save result
+            sim_states[i] = y_curr
+
+        x, y, z = sim_states.T
+        states = sim_states    
+        t = t_eval
+
+        if i < len(t_eval)-1:
+            raise RuntimeError(f"Stochastic Lorenz63 solve_ivp failed.")
 
     return {
-        "t": sol.t,
+        "t": t,
         "x": x,
         "y": y,
         "z": z,
@@ -59,8 +102,10 @@ def generate_lorenz63(
         "sigma": float(sigma),
         "rho": float(rho),
         "beta": float(beta),
+        "forcing": forcing,
+        "noise": noise,
+        "noise_seed": noise_seed
     }
-
 
 def save_lorenz63_npz(data, output_path):
     """Save Lorenz63 data in a compact NumPy format for later training."""
@@ -77,6 +122,9 @@ def save_lorenz63_npz(data, output_path):
         sigma=data["sigma"],
         rho=data["rho"],
         beta=data["beta"],
+        forcing=data["forcing"],
+        noise=data["noise"],
+        noise_seed=data["noise_seed"]
     )
 
 
@@ -144,6 +192,9 @@ def parse_args():
     parser.add_argument("--sigma", type=float, default=10.0)
     parser.add_argument("--rho", type=float, default=28.0)
     parser.add_argument("--beta", type=float, default=8.0 / 3.0)
+    parser.add_argument("--forcing", type=float, nargs=3, default=[0.0, 0.0, 0.0])
+    parser.add_argument("--noise", type=float, nargs=3, default=[0.0, 0.0, 0.0])
+    parser.add_argument("--noise_seed", type=float, default=None)
     return parser.parse_args()
 
 
@@ -156,6 +207,9 @@ def main():
         sigma=args.sigma,
         rho=args.rho,
         beta=args.beta,
+        forcing=tuple(args.forcing),
+        noise=tuple(args.noise),
+        noise_seed=args.noise_seed
     )
     save_lorenz63_npz(data, args.output)
     print(f"Saved Lorenz63 data to {args.output}")
